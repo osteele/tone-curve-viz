@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import { BookOpen, Github } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import React, { DragEvent, useCallback, useEffect, useState } from "react";
 import { Line, LineChart, XAxis, YAxis } from "recharts";
 import "./PhotoEditor.css";
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: PhotoSettings = {
 
 const LIGHT_CONTROLS: (keyof PhotoSettings)[] = [
   "exposure",
+  "contrast",
   "highlights",
   "shadows",
   "whites",
@@ -46,7 +48,6 @@ const LIGHT_CONTROLS: (keyof PhotoSettings)[] = [
 const COLOR_CONTROLS: (keyof PhotoSettings)[] = [
   "temperature",
   "tint",
-  "contrast",
   "vibrance",
   "saturation",
 ];
@@ -70,6 +71,111 @@ const NEUTRAL_SETTINGS: PhotoSettings = {
   saturation: 0,
 };
 
+interface Histogram {
+  r: Uint32Array;
+  g: Uint32Array;
+  b: Uint32Array;
+  luminance: Uint32Array;
+}
+
+const calculateHistogram = (
+  gl: WebGLRenderingContext,
+  width: number,
+  height: number
+): Histogram => {
+  const pixels = new Uint8Array(width * height * 4);
+  gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+  const r = new Uint32Array(256).fill(0);
+  const g = new Uint32Array(256).fill(0);
+  const b = new Uint32Array(256).fill(0);
+  const luminance = new Uint32Array(256).fill(0);
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const rVal = pixels[i];
+    const gVal = pixels[i + 1];
+    const bVal = pixels[i + 2];
+
+    r[rVal]++;
+    g[gVal]++;
+    b[bVal]++;
+
+    // Calculate luminance using standard coefficients
+    const lum = Math.round(0.2126 * rVal + 0.7152 * gVal + 0.0722 * bVal);
+    luminance[lum]++;
+  }
+
+  return { r, g, b, luminance };
+};
+
+const calculateAutoSettings = (
+  histogram: Histogram
+): Partial<PhotoSettings> => {
+  const totalPixels = histogram.luminance.reduce((a, b) => a + b, 0);
+
+  // Gray World Assumption: calculate average RGB values
+  const rAvg = histogram.r.reduce((a, b, i) => a + b * i, 0) / totalPixels;
+  const gAvg = histogram.g.reduce((a, b, i) => a + b * i, 0) / totalPixels;
+  const bAvg = histogram.b.reduce((a, b, i) => a + b * i, 0) / totalPixels;
+
+  // Average of RGB channels should be middle gray (127.5)
+  const avgBrightness = (rAvg + gAvg + bAvg) / 3;
+  const exposureAdjustment = Math.log2(127.5 / avgBrightness);
+
+  // Find black point (clip darkest 0.5% of pixels)
+  let blackPoint = 0;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) {
+    sum += histogram.luminance[i];
+    if (sum > totalPixels * 0.005) {
+      blackPoint = i;
+      break;
+    }
+  }
+
+  // Find white point (clip brightest 0.5% of pixels)
+  let whitePoint = 255;
+  sum = 0;
+  for (let i = 255; i >= 0; i--) {
+    sum += histogram.luminance[i];
+    if (sum > totalPixels * 0.005) {
+      whitePoint = i;
+      break;
+    }
+  }
+
+  // Calculate contrast based on histogram spread
+  const histogramSpread = whitePoint - blackPoint;
+  const contrastAdjustment = Math.min(
+    100,
+    Math.max(40, 50 + (histogramSpread / 255 - 0.5) * 50)
+  );
+
+  // Temperature adjustment based on red-blue balance
+  const tempAdjustment = 5500 + (bAvg - rAvg) * 25;
+
+  return {
+    exposure: Math.max(-2, Math.min(2, exposureAdjustment)),
+    contrast: contrastAdjustment,
+    temperature: Math.min(12000, Math.max(2000, tempAdjustment)),
+    blacks: Math.max(-50, blackPoint / 2), // More aggressive blacks adjustment
+    whites: Math.min(50, (255 - whitePoint) / 2),
+    highlights: 0,
+    shadows: 0,
+    tint: 0,
+    vibrance: 0,
+    saturation: 0,
+  };
+};
+
+const checkHighPrecisionSupport = (gl: WebGLRenderingContext): boolean => {
+  const precisionFormat = gl.getShaderPrecisionFormat(
+    gl.FRAGMENT_SHADER,
+    gl.HIGH_FLOAT
+  );
+  return precisionFormat !== null && precisionFormat.precision > 0;
+};
+
 const PhotoEditor: React.FC = () => {
   const [settings, setSettings] = useState<PhotoSettings>(DEFAULT_SETTINGS);
   const [originalImageUrl, setOriginalImageUrl] =
@@ -89,7 +195,6 @@ const PhotoEditor: React.FC = () => {
   const [curveTexture, setCurveTexture] = useState<WebGLTexture | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Add helper function for rendering
   const renderImage = (
     gl: WebGLRenderingContext,
     program: WebGLProgram,
@@ -191,7 +296,6 @@ const PhotoEditor: React.FC = () => {
     curveGl.bindFramebuffer(curveGl.FRAMEBUFFER, null);
   }, [curveGl, curveProgram, curveTexture, settings]);
 
-  // Add effect to update curve data when settings change
   useEffect(() => {
     calculateToneCurves();
   }, [settings, calculateToneCurves]);
@@ -199,6 +303,14 @@ const PhotoEditor: React.FC = () => {
   // Initialize WebGL context and program
   const initWebGL = useCallback(
     (canvas: HTMLCanvasElement, gl: WebGLRenderingContext) => {
+      // Check precision support
+      const hasHighP = checkHighPrecisionSupport(gl);
+      if (!hasHighP) {
+        console.warn(
+          "High precision float not supported - image quality may be reduced"
+        );
+      }
+
       // Create shader program
       const vertexShader = gl.createShader(gl.VERTEX_SHADER);
       if (!vertexShader) {
@@ -275,9 +387,8 @@ const PhotoEditor: React.FC = () => {
       return prog;
     },
     []
-  ); // Remove processedGl from dependencies
+  );
 
-  // Modify the loadImage function to handle both File and string URLs
   const loadImage = useCallback(
     (source: File | string) => {
       if (!processedGl || !processedProgram) return;
@@ -351,7 +462,6 @@ const PhotoEditor: React.FC = () => {
     [processedGl, processedProgram]
   );
 
-  // Update the useEffect for loading the default image
   useEffect(() => {
     if (processedGl && processedProgram) {
       // Only load when GL is ready
@@ -359,7 +469,6 @@ const PhotoEditor: React.FC = () => {
     }
   }, [loadImage, processedGl, processedProgram]);
 
-  // Update the handleDrop callback to use the modified loadImage function
   const handleDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -428,7 +537,6 @@ const PhotoEditor: React.FC = () => {
     setSettings(DEFAULT_SETTINGS);
   };
 
-  // Add this function at the top of the component
   const createGradientPixmap = () => {
     const width = 256;
     const height = 1;
@@ -446,7 +554,6 @@ const PhotoEditor: React.FC = () => {
     return new ImageData(data, width, height);
   };
 
-  // Add this effect after the other useEffects
   useEffect(() => {
     // Initialize curve WebGL context
     const curveCanvas = document.createElement("canvas");
@@ -488,7 +595,6 @@ const PhotoEditor: React.FC = () => {
     };
   }, []); // Run once on mount
 
-  // Update the GradientPreview component
   const GradientPreview: React.FC<{ data: CurvePoint[] }> = ({ data }) => {
     const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
@@ -522,7 +628,6 @@ const PhotoEditor: React.FC = () => {
     );
   };
 
-  // Add these handlers near the other event handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
@@ -532,6 +637,130 @@ const PhotoEditor: React.FC = () => {
     e.preventDefault();
     setIsDragging(false);
   }, []);
+
+  const handleAutoAdjust = useCallback(() => {
+    if (!processedGl || !processedTexture) return;
+
+    const canvas = processedGl.canvas as HTMLCanvasElement;
+    const histogram = calculateHistogram(
+      processedGl,
+      canvas.width,
+      canvas.height
+    );
+    const autoSettings = calculateAutoSettings(histogram);
+
+    setSettings((prev) => ({
+      ...prev,
+      ...autoSettings,
+    }));
+  }, [processedGl, processedTexture]);
+
+  const drawHistogram = useCallback(
+    (canvas: HTMLCanvasElement, histogram: Histogram) => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      // Set canvas size with device pixel ratio for sharp rendering
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      ctx.clearRect(0, 0, rect.width, rect.height);
+
+      // Find the maximum value for scaling
+      const maxCount = Math.max(...histogram.luminance);
+
+      // Draw RGB histograms with low opacity
+      const channels = [
+        { data: histogram.r, color: "rgba(255, 50, 50, 0.3)" },
+        { data: histogram.g, color: "rgba(50, 255, 50, 0.3)" },
+        { data: histogram.b, color: "rgba(50, 50, 255, 0.3)" },
+      ];
+
+      channels.forEach(({ data, color }) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < 256; i++) {
+          const x = (i / 255) * rect.width;
+          const h = (data[i] / maxCount) * rect.height;
+
+          if (i === 0) {
+            ctx.moveTo(x, rect.height);
+          }
+          ctx.lineTo(x, rect.height - h);
+        }
+
+        ctx.stroke();
+      });
+
+      // Draw luminance histogram on top
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i < 256; i++) {
+        const x = (i / 255) * rect.width;
+        const h = (histogram.luminance[i] / maxCount) * rect.height;
+
+        if (i === 0) {
+          ctx.moveTo(x, rect.height);
+        }
+        ctx.lineTo(x, rect.height - h);
+      }
+
+      ctx.stroke();
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!processedGl || !processedProgram || !processedTexture) return;
+
+    const originalHistogramCanvas = document.querySelector(
+      ".original-histogram"
+    ) as HTMLCanvasElement;
+    const processedHistogramCanvas = document.querySelector(
+      ".processed-histogram"
+    ) as HTMLCanvasElement;
+
+    if (originalHistogramCanvas && processedHistogramCanvas) {
+      // For original image, use neutral settings and only update once
+      renderImage(
+        processedGl,
+        processedProgram,
+        processedTexture,
+        NEUTRAL_SETTINGS
+      );
+      const originalHistogram = calculateHistogram(
+        processedGl,
+        processedGl.canvas.width,
+        processedGl.canvas.height
+      );
+      drawHistogram(originalHistogramCanvas, originalHistogram);
+
+      // For processed image, use current settings and update with changes
+      renderImage(processedGl, processedProgram, processedTexture, settings);
+      const processedHistogram = calculateHistogram(
+        processedGl,
+        processedGl.canvas.width,
+        processedGl.canvas.height
+      );
+      drawHistogram(processedHistogramCanvas, processedHistogram);
+
+      // Render the processed image again to ensure it's displayed
+      renderImage(processedGl, processedProgram, processedTexture, settings);
+    }
+  }, [
+    processedGl,
+    processedProgram,
+    processedTexture,
+    settings,
+    drawHistogram,
+  ]);
 
   return (
     <>
@@ -543,7 +772,13 @@ const PhotoEditor: React.FC = () => {
           className="p-2 rounded-full hover:bg-secondary/80 transition-colors"
           title="View source code"
         >
-          <Github className="w-5 h-5" />
+          <svg height="32" viewBox="0 0 16 16" width="32" className="w-5 h-5">
+            <path
+              fillRule="evenodd"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+              fill="currentColor"
+            />
+          </svg>
         </a>
       </div>
       <div className="flex gap-4 p-4 min-h-[calc(100vh-2rem)]">
@@ -556,7 +791,9 @@ const PhotoEditor: React.FC = () => {
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`relative ${isDragging ? "bg-secondary/50" : ""}`}
+                  className={`relative flex-1 ${
+                    isDragging ? "bg-secondary/50" : ""
+                  }`}
                 >
                   <h3 className="text-sm mb-2">Original (Drop image here)</h3>
                   <img
@@ -565,13 +802,9 @@ const PhotoEditor: React.FC = () => {
                     className="w-full h-auto"
                     crossOrigin="anonymous"
                   />
-                  {isDragging && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg">
-                      <span className="text-sm">Drop image here</span>
-                    </div>
-                  )}
+                  <canvas className="histogram-canvas original-histogram" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h3 className="text-sm mb-2">Processed</h3>
                   <canvas
                     ref={(canvas) => {
@@ -588,6 +821,7 @@ const PhotoEditor: React.FC = () => {
                     }}
                     className="w-full h-auto"
                   />
+                  <canvas className="histogram-canvas processed-histogram" />
                 </div>
               </div>
             </CardContent>
@@ -597,12 +831,7 @@ const PhotoEditor: React.FC = () => {
             <CardContent className="p-4">
               <h2 className="text-lg font-semibold mb-4">Tone Curve</h2>
               <div className="relative pb-12">
-                <LineChart
-                  width={400}
-                  height={200}
-                  data={curveData}
-                  margin={{ left: 0, right: 20, top: 20, bottom: 20 }} // Add margins to reduce whitespace
-                >
+                <LineChart width={400} height={200} data={curveData}>
                   <XAxis dataKey="x" domain={[0, 255]} />{" "}
                   {/* Ensure full range */}
                   <YAxis domain={[0, 255]} /> {/* Ensure full range */}
@@ -625,6 +854,20 @@ const PhotoEditor: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Controls</h2>
               <div className="flex gap-2 items-center">
+                <Button
+                  onClick={handleAutoAdjust}
+                  className="px-3 py-1 text-sm"
+                  variant="secondary"
+                >
+                  Auto
+                </Button>
+                <Button
+                  onClick={handleReset}
+                  className="px-3 py-1 text-sm"
+                  variant="secondary"
+                >
+                  Reset
+                </Button>
                 <a
                   href="https://github.com/osteele/tone-curve-viz/blob/main/docs/editing-controls.md"
                   target="_blank"
@@ -634,29 +877,19 @@ const PhotoEditor: React.FC = () => {
                 >
                   <BookOpen className="w-4 h-4" />
                 </a>
-                <button
-                  onClick={handleReset}
-                  className="px-3 py-1 text-sm bg-secondary hover:bg-secondary/80 rounded-md"
-                >
-                  Reset All
-                </button>
               </div>
             </div>
 
             <div className="overflow-y-auto flex-1">
-              <div className="mb-4">
-                <h3 className="text-xl font-semibold mb-2 border-b pb-2">
-                  Light
-                </h3>
+              <div className="mb-4 light-controls">
+                <h3 className="section-title">Light</h3>
                 {LIGHT_CONTROLS.map((name) => (
                   <div key={`light-${name}`}>{renderSlider(name)}</div>
                 ))}
               </div>
 
-              <div className="mb-4">
-                <h3 className="text-xl font-semibold mb-2 border-b pb-2">
-                  Color
-                </h3>
+              <div className="mb-4 color-controls">
+                <h3 className="section-title">Color</h3>
                 {COLOR_CONTROLS.map((name) => (
                   <div key={`color-${name}`}>{renderSlider(name)}</div>
                 ))}

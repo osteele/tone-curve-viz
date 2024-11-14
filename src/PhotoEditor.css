@@ -19,3 +19,33 @@
   border: 2px dashed currentColor;
   pointer-events: none;
 }
+
+.light-controls {
+  background-color: hsl(var(--muted) / 0.6);
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  margin: 1rem;
+}
+
+.color-controls {
+  background: linear-gradient(to bottom, hsl(var(--muted)), hsl(var(--accent)));
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  margin: 1rem;
+}
+
+.section-title {
+  text-align: left;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.histogram-canvas {
+  width: 100%;
+  height: 100px;
+  background-color: hsl(var(--muted) / 0.2);
+  margin-top: 0.5rem;
+  border-radius: var(--radius);
+  border: 1px solid hsl(var(--border));
+}

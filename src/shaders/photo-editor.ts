@@ -10,7 +10,16 @@ export const vertexShaderSource = `
 `;
 
 export const fragmentShaderSource = `
-  precision mediump float;
+  // Request high precision if available, fallback to medium precision
+  // High precision (fp32) needed for:
+  // - pow(2.0, exposure) to handle small exposure adjustments accurately
+  // - log() in temperature calculations
+  // - color calculations in highlights where mediump (fp16) quantization is visible
+  #ifdef GL_FRAGMENT_PRECISION_HIGH
+    precision highp float;
+  #else
+    precision mediump float;
+  #endif
 
   varying vec2 v_texCoord;
   uniform sampler2D u_image;
