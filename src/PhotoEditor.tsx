@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Info } from "lucide-react";
 import React, { DragEvent, useCallback, useEffect, useState } from "react";
 import { Line, LineChart, XAxis, YAxis } from "recharts";
 import "./PhotoEditor.css";
@@ -764,28 +764,25 @@ const PhotoEditor: React.FC = () => {
 
   return (
     <>
-      <div className="fixed top-4 right-4">
-        <a
-          href="https://github.com/osteele/tone-curve-viz"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-2 rounded-full hover:bg-secondary/80 transition-colors"
-          title="View source code"
-        >
-          <svg height="32" viewBox="0 0 16 16" width="32" className="w-5 h-5">
-            <path
-              fillRule="evenodd"
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
-              fill="currentColor"
-            />
-          </svg>
-        </a>
-      </div>
       <div className="flex gap-4 p-4 min-h-[calc(100vh-2rem)]">
         <div className="flex flex-col gap-4 flex-[2]">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Tone Curve Visualizer</h2>
+            <a
+              href="https://github.com/osteele/tone-curve-viz#readme"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-full hover:bg-secondary/80 transition-colors"
+              title="View documentation"
+            >
+              <Info className="w-4 h-4" />
+            </a>
+          </div>
           <Card>
             <CardContent className="p-4">
-              <h2 className="text-lg font-semibold mb-4">Image</h2>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-lg font-semibold">Image</h2>
+              </div>
               <div className="flex gap-4">
                 <div
                   onDragOver={handleDragOver}
@@ -898,17 +895,44 @@ const PhotoEditor: React.FC = () => {
           </CardContent>
         </Card>
       </div>
-      <footer className="fixed bottom-0 left-0 right-0 p-2 text-center text-sm bg-background/80 backdrop-blur-sm border-t">
-        Copyright 2024 by Oliver Steele. This site is{" "}
+      <footer className="fixed bottom-0 left-0 right-0 p-2 text-center text-sm bg-background/80 backdrop-blur-sm border-t flex items-center justify-center gap-2">
         <a
-          href="https://underconstruction.fun"
+          href="https://github.com/osteele/tone-curve-viz"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary hover:underline"
+          className="hover:text-primary"
+          title="View source code"
         >
-          Under Construction
+          <svg height="16" viewBox="0 0 16 16" width="16">
+            <path
+              fillRule="evenodd"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+              fill="currentColor"
+            />
+          </svg>
         </a>
-        .
+        <span>
+          Copyright 2024 by{" "}
+          <a
+            href="https://github.com/osteele"
+            className="text-primary hover:underline"
+          >
+            Oliver Steele
+          </a>
+          .
+        </span>
+        <span>This site is under</span>
+        <span>
+          <a
+            href="https://underconstruction.fun"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
+          >
+            Under Construction
+          </a>
+          .
+        </span>
       </footer>
     </>
   );
