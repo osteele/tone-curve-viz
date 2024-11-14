@@ -6,76 +6,81 @@ This document describes the technical implementation of photo editing controls i
 
 The photo editor implements real-time image adjustments using WebGL shaders. All adjustments are performed on the GPU, allowing for efficient processing of high-resolution images.
 
-## Light Controls
+## Control Ranges and Order
 
-### Exposure
-- Range: [-5, +5] EV (Exposure Value)
-- Implementation: $RGB_{out} = RGB_{in} \times 2^{exposure}$
-- Effect: Multiplicative adjustment of pixel brightness
+The photo editor implements standard photo editing controls in the following order:
 
-### Contrast
-- Range: [-100, +100]
-- Implementation: $RGB_{out} = (RGB_{in} - 0.5) \times (1 + contrast \times 0.02) + 0.5$
-- Effect: Adjusts the difference between light and dark values
+1. **White Balance**
+   - Temperature: [2000K to 12000K], default 5500K
+   - Tint: [-150 to +150], default 0
 
-### Highlights
-- Range: [-100, +100]
-- Implementation: For luminance > 0.5:
-  $$
-  RGB_{out} = RGB_{in} \times (1 + highlightsAdjust \times (luminance - 0.5))
-  $$
-  where $luminance = 0.299R + 0.587G + 0.114B$
+2. **Tone Controls**
+   - Exposure: [-5.0 to +5.0] EV, default 0
+   - Highlights: [-100 to +100], default 0
+   - Shadows: [-100 to +100], default 0
+   - Whites: [-100 to +100], default 0
+   - Blacks: [-100 to +100], default 0
 
-### Shadows
-- Range: [-100, +100]
-- Implementation: For luminance < 0.5:
-  $$
-  RGB_{out} = RGB_{in} \times (1 + shadowsAdjust \times (0.5 - luminance))
-  $$
+3. **Presence**
+   - Contrast: [0 to +100], default 50
+   - Saturation: [-100 to +100], default 0
+   - Vibrance: [-100 to +100], default 0
 
-### Whites
-- Range: [-100, +100]
-- Implementation: For luminance > 0.75:
-  $$
-  RGB_{out} = RGB_{in} \times (1 + whites \times 0.01 \times (luminance - 0.75))
-  $$
+## Processing Pipeline
 
-### Blacks
-- Range: [-100, +100]
-- Implementation: For luminance < 0.25:
-  $$
-  RGB_{out} = RGB_{in} \times (1 + blacks \times 0.01 \times (0.25 - luminance))
-  $$
+### Order of Operations
 
-## Color Controls
+1. **Raw Image Input**
+   - Texture sampling: $color = texture2D(u_image, v_texCoord)$
 
-### Temperature
-- Range: [-100, +100]
-- Implementation: Shifts hue in HSL color space
-- Effect: Adjusts blue-yellow balance
-  $$
-  hue_{out} = hue_{in} + temperature \times 0.0005
-  $$
+2. **White Balance**
+   - Temperature adjustment (Kelvin to RGB conversion)
+   - Tint adjustment (green-magenta balance)
 
-### Tint
-- Range: [-100, +100]
-- Implementation: Shifts hue in HSL color space
-- Effect: Adjusts green-magenta balance
-  $$
-  hue_{out} = hue_{in} + tint \times 0.0005
-  $$
+3. **Exposure**
+   - $RGB_{out} = RGB_{in} \times 2^{exposure}$
 
-### Vibrance
-- Range: [-100, +100]
-- Implementation: Selective saturation adjustment based on current saturation levels
-- Effect: Increases saturation of less-saturated colors more than already-saturated colors
+4. **Highlights and Shadows Recovery**
+   - Applied to preserve detail in extreme tonal ranges
+   - Uses luminance-based masking
 
-### Saturation
-- Range: [-100, +100]
-- Implementation: Multiplies saturation in HSL color space:
-  $$
-  saturation_{out} = saturation_{in} \times (1 + saturation \times 0.01)
-  $$
+5. **Whites and Blacks**
+   - Adjusts the white and black points
+   - Applied before contrast to preserve detail
+
+6. **Contrast**
+   - Applied later to maintain proper tonal relationships
+   - $RGB_{out} = (RGB_{in} - 0.5) \times (contrast + 1) + 0.5$
+
+7. **Saturation and Vibrance**
+   - Final color adjustments
+   - Applied last to preserve color relationships
+
+8. **Final Clamping**
+   - $RGB_{final} = clamp(RGB, 0.0, 1.0)$
+
+### Processing Order Rationale
+
+1. **White Balance First**:
+   - Corrects the overall color temperature before other adjustments
+   - Simulates the physical process of light capture
+
+2. **Exposure After White Balance**:
+   - Adjusts the overall brightness while maintaining color relationships
+   - Provides the foundation for subsequent tonal adjustments
+
+3. **Tonal Range Adjustments**:
+   - Highlights/Shadows recovery preserves detail in extreme ranges
+   - Whites/Blacks fine-tune the tonal range endpoints
+   - Applied before contrast to maintain detail
+
+4. **Contrast After Tonal Range**:
+   - Works with the properly distributed tonal range
+   - Maintains the adjustments made by highlights/shadows
+
+5. **Color Adjustments Last**:
+   - Saturation and vibrance work on properly exposed image
+   - Prevents unwanted color shifts from subsequent adjustments
 
 ## Technical Implementation Details
 
@@ -145,62 +150,3 @@ The editor maintains three separate WebGL contexts:
 - Tone curve calculation
 
 Each context is initialized with the same shader program but operates independently to prevent context conflicts.
-
-## Order of Operations
-
-The adjustments are applied in a specific order in the fragment shader to ensure consistent and predictable results:
-
-1. **Raw Image Input**
-   - Texture sampling: $color = texture2D(u_image, v_texCoord)$
-
-2. **Exposure Adjustment**
-   - Applied first to preserve the linear relationship with incoming light
-   - $RGB_{raw} \rightarrow RGB_{exposure}$
-
-3. **Contrast Adjustment**
-   - Applied after exposure to maintain proper tonal distribution
-   - $RGB_{exposure} \rightarrow RGB_{contrast}$
-
-4. **Color Temperature and Tint**
-   1. Convert to HSL
-   2. Apply temperature adjustment (blue-yellow balance)
-   3. Apply tint adjustment (green-magenta balance)
-   4. Convert back to RGB
-
-5. **Saturation and Vibrance**
-   - Applied after temperature/tint to ensure proper color enhancement
-   - Saturation is applied globally
-   - Vibrance is applied selectively based on current saturation levels
-
-6. **Tonal Range Adjustments**
-   1. Calculate luminance
-   2. Apply shadows adjustment (luminance < 0.5)
-   3. Apply highlights adjustment (luminance > 0.5)
-   4. Apply blacks adjustment (luminance < 0.25)
-   5. Apply whites adjustment (luminance > 0.75)
-
-7. **Final Clamping**
-   - Ensure all values are within valid range: $RGB_{final} = clamp(RGB, 0.0, 1.0)$
-
-### Rationale for Order
-
-1. **Exposure First**:
-   - Simulates the physical process of light capture
-   - Provides the foundation for all subsequent adjustments
-
-2. **Contrast Before Color**:
-   - Ensures contrast adjustments work on the full luminance range
-   - Prevents color shifts that could occur if applied after color adjustments
-
-3. **Color Before Tonal Range**:
-   - Allows color adjustments to work with the full dynamic range
-   - Prevents color shifts that could occur from subsequent luminance changes
-
-4. **Tonal Range Last**:
-   - Fine-tunes the final image appearance
-   - Provides precise control over specific brightness regions
-   - Maintains color accuracy from previous adjustments
-
-### Implementation Note
-
-All operations are performed in a single shader pass for efficiency. The order is fixed in the shader code and cannot be modified at runtime. This ensures consistent results and optimal performance.

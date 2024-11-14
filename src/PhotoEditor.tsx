@@ -9,34 +9,33 @@ import {
 } from "./shaders/photo-editor";
 
 interface PhotoSettings {
+  temperature: number;
+  tint: number;
   exposure: number;
-  contrast: number;
   highlights: number;
   shadows: number;
   whites: number;
   blacks: number;
-  temperature: number;
-  tint: number;
+  contrast: number;
   vibrance: number;
   saturation: number;
 }
 
 const DEFAULT_SETTINGS: PhotoSettings = {
-  exposure: 0, // -5 to +5
-  contrast: 0, // -100 to +100
-  highlights: 0, // -100 to +100
-  shadows: 0, // -100 to +100
-  whites: 0, // -100 to +100
-  blacks: 0, // -100 to +100
-  temperature: 0, // -100 to +100
-  tint: 0, // -100 to +100
-  vibrance: 0, // -100 to +100
-  saturation: 0, // -100 to +100
+  temperature: 5500,
+  tint: 0,
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  contrast: 50,
+  vibrance: 0,
+  saturation: 0,
 };
 
 const LIGHT_CONTROLS: (keyof PhotoSettings)[] = [
   "exposure",
-  "contrast",
   "highlights",
   "shadows",
   "whites",
@@ -46,6 +45,7 @@ const LIGHT_CONTROLS: (keyof PhotoSettings)[] = [
 const COLOR_CONTROLS: (keyof PhotoSettings)[] = [
   "temperature",
   "tint",
+  "contrast",
   "vibrance",
   "saturation",
 ];
@@ -55,21 +55,28 @@ interface CurvePoint {
   y: number;
 }
 
+// Create neutral settings for original image
+const NEUTRAL_SETTINGS: PhotoSettings = {
+  temperature: 5500, // Neutral daylight
+  tint: 0,
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  contrast: 50, // Middle value
+  vibrance: 0,
+  saturation: 0,
+};
+
 const PhotoEditor: React.FC = () => {
   const [settings, setSettings] = useState<PhotoSettings>(DEFAULT_SETTINGS);
-  const [originalGl, setOriginalGl] = useState<WebGLRenderingContext | null>(
-    null
-  );
+  const [originalImageUrl, setOriginalImageUrl] =
+    useState<string>("/image.jpg");
   const [processedGl, setProcessedGl] = useState<WebGLRenderingContext | null>(
     null
   );
-  const [originalProgram, setOriginalProgram] = useState<WebGLProgram | null>(
-    null
-  );
   const [processedProgram, setProcessedProgram] = useState<WebGLProgram | null>(
-    null
-  );
-  const [originalTexture, setOriginalTexture] = useState<WebGLTexture | null>(
     null
   );
   const [processedTexture, setProcessedTexture] = useState<WebGLTexture | null>(
@@ -95,23 +102,26 @@ const PhotoEditor: React.FC = () => {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     const textureLocation = gl.getUniformLocation(program, "u_image");
+    if (textureLocation === null) return;
     gl.uniform1i(textureLocation, 0);
 
+    // Map settings to uniforms
     const uniforms = {
+      u_temperature: settings.temperature,
+      u_tint: settings.tint,
       u_exposure: settings.exposure,
-      u_contrast: settings.contrast,
       u_highlights: settings.highlights,
       u_shadows: settings.shadows,
       u_whites: settings.whites,
       u_blacks: settings.blacks,
-      u_temperature: settings.temperature,
-      u_tint: settings.tint,
+      u_contrast: settings.contrast,
       u_vibrance: settings.vibrance,
       u_saturation: settings.saturation,
     };
 
     Object.entries(uniforms).forEach(([name, value]) => {
       const location = gl.getUniformLocation(program, name);
+      if (location === null) return;
       gl.uniform1f(location, value);
     });
 
@@ -172,9 +182,6 @@ const PhotoEditor: React.FC = () => {
       y: pixels[i * 4], // Using red channel
     }));
 
-    // Add logging for the curve data
-    console.log("Generated curve points:", points.length);
-
     setCurveData(points);
 
     // Cleanup
@@ -190,96 +197,144 @@ const PhotoEditor: React.FC = () => {
 
   // Initialize WebGL context and program
   const initWebGL = useCallback(
-    (canvas: HTMLCanvasElement, isProcessed: boolean) => {
-      const glContext = canvas.getContext("webgl");
-      if (!glContext) return;
-
+    (canvas: HTMLCanvasElement, gl: WebGLRenderingContext) => {
       // Create shader program
-      const vertexShader = glContext.createShader(glContext.VERTEX_SHADER)!;
-      glContext.shaderSource(vertexShader, vertexShaderSource);
-      glContext.compileShader(vertexShader);
+      const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+      if (!vertexShader) {
+        console.error("Failed to create vertex shader");
+        return;
+      }
+      gl.shaderSource(vertexShader, vertexShaderSource);
+      gl.compileShader(vertexShader);
 
-      const fragmentShader = glContext.createShader(glContext.FRAGMENT_SHADER)!;
-      glContext.shaderSource(fragmentShader, fragmentShaderSource);
-      glContext.compileShader(fragmentShader);
+      // Check vertex shader compilation
+      if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+        console.error(
+          "Vertex shader compilation error:",
+          gl.getShaderInfoLog(vertexShader)
+        );
+        return;
+      }
 
-      const prog = glContext.createProgram()!;
-      glContext.attachShader(prog, vertexShader);
-      glContext.attachShader(prog, fragmentShader);
-      glContext.linkProgram(prog);
+      const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+      if (!fragmentShader) {
+        console.error("Failed to create fragment shader");
+        return;
+      }
+      gl.shaderSource(fragmentShader, fragmentShaderSource);
+      gl.compileShader(fragmentShader);
+
+      // Check fragment shader compilation
+      if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+        console.error(
+          "Fragment shader compilation error:",
+          gl.getShaderInfoLog(fragmentShader)
+        );
+        return;
+      }
+
+      const prog = gl.createProgram();
+      if (!prog) return;
+
+      gl.attachShader(prog, vertexShader);
+      gl.attachShader(prog, fragmentShader);
+      gl.linkProgram(prog);
+
+      // Check program linking
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        console.error("Program linking error:", gl.getProgramInfoLog(prog));
+        return;
+      }
 
       // Get attribute locations
-      const positionLocation = glContext.getAttribLocation(prog, "a_position");
-      const texCoordLocation = glContext.getAttribLocation(prog, "a_texCoord");
+      const positionLocation = gl.getAttribLocation(prog, "a_position");
+      const texCoordLocation = gl.getAttribLocation(prog, "a_texCoord");
 
       // Set up buffers
       const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-      const texCoords = new Float32Array([
-        0,
-        1, // bottom left
-        1,
-        1, // bottom right
-        0,
-        0, // top left
-        1,
-        0, // top right
-      ]);
+      const texCoords = new Float32Array([0, 1, 1, 1, 0, 0, 1, 0]);
 
-      const positionBuffer = glContext.createBuffer();
-      glContext.bindBuffer(glContext.ARRAY_BUFFER, positionBuffer);
-      glContext.bufferData(
-        glContext.ARRAY_BUFFER,
-        positions,
-        glContext.STATIC_DRAW
-      );
-      glContext.enableVertexAttribArray(positionLocation);
-      glContext.vertexAttribPointer(
-        positionLocation,
-        2,
-        glContext.FLOAT,
-        false,
-        0,
-        0
-      );
+      const positionBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 
-      const texCoordBuffer = glContext.createBuffer();
-      glContext.bindBuffer(glContext.ARRAY_BUFFER, texCoordBuffer);
-      glContext.bufferData(
-        glContext.ARRAY_BUFFER,
-        texCoords,
-        glContext.STATIC_DRAW
-      );
-      glContext.enableVertexAttribArray(texCoordLocation);
-      glContext.vertexAttribPointer(
-        texCoordLocation,
-        2,
-        glContext.FLOAT,
-        false,
-        0,
-        0
-      );
+      const texCoordBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
 
-      if (isProcessed) {
-        setProcessedGl(glContext);
-        setProcessedProgram(prog);
-      } else if (canvas.width !== 256) {
-        setOriginalGl(glContext);
-        setOriginalProgram(prog);
-      }
+      // Set up the attributes
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+      gl.enableVertexAttribArray(texCoordLocation);
+      gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
       return prog;
     },
     []
-  );
+  ); // Remove processedGl from dependencies
 
   // Modify the loadImage function to handle both File and string URLs
   const loadImage = useCallback(
     (source: File | string) => {
-      if (!originalGl || !processedGl || !originalProgram || !processedProgram)
-        return;
+      if (!processedGl || !processedProgram) return;
 
       const img = new Image();
-      img.crossOrigin = "anonymous"; // Add this for loading default image
+      img.crossOrigin = "anonymous";
+
+      img.onload = () => {
+        // Set the image URL for the original image
+        if (source instanceof File) {
+          const url = URL.createObjectURL(source);
+          setOriginalImageUrl(url);
+        } else {
+          setOriginalImageUrl(source);
+        }
+
+        // Set up processed image texture
+        const canvas = processedGl.canvas as HTMLCanvasElement;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        processedGl.viewport(0, 0, img.width, img.height);
+
+        const processedTex = processedGl.createTexture();
+        if (!processedTex) return;
+
+        processedGl.bindTexture(processedGl.TEXTURE_2D, processedTex);
+        processedGl.texImage2D(
+          processedGl.TEXTURE_2D,
+          0,
+          processedGl.RGBA,
+          processedGl.RGBA,
+          processedGl.UNSIGNED_BYTE,
+          img
+        );
+
+        processedGl.texParameteri(
+          processedGl.TEXTURE_2D,
+          processedGl.TEXTURE_WRAP_S,
+          processedGl.CLAMP_TO_EDGE
+        );
+        processedGl.texParameteri(
+          processedGl.TEXTURE_2D,
+          processedGl.TEXTURE_WRAP_T,
+          processedGl.CLAMP_TO_EDGE
+        );
+        processedGl.texParameteri(
+          processedGl.TEXTURE_2D,
+          processedGl.TEXTURE_MIN_FILTER,
+          processedGl.LINEAR
+        );
+        processedGl.texParameteri(
+          processedGl.TEXTURE_2D,
+          processedGl.TEXTURE_MAG_FILTER,
+          processedGl.LINEAR
+        );
+
+        setProcessedTexture(processedTex);
+      };
 
       if (source instanceof File) {
         const reader = new FileReader();
@@ -291,50 +346,17 @@ const PhotoEditor: React.FC = () => {
       } else {
         img.src = source;
       }
-
-      img.onload = () => {
-        // Set canvas sizes
-        [originalGl, processedGl].forEach((gl) => {
-          const canvas = gl.canvas as HTMLCanvasElement;
-          canvas.width = img.width;
-          canvas.height = img.height;
-          gl.viewport(0, 0, img.width, img.height);
-        });
-
-        // Create textures
-        const originalTex = originalGl.createTexture();
-        const processedTex = processedGl.createTexture();
-
-        [
-          { gl: originalGl, tex: originalTex },
-          { gl: processedGl, tex: processedTex },
-        ].forEach(({ gl, tex }) => {
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-          gl.texImage2D(
-            gl.TEXTURE_2D,
-            0,
-            gl.RGBA,
-            gl.RGBA,
-            gl.UNSIGNED_BYTE,
-            img
-          );
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        });
-
-        setOriginalTexture(originalTex);
-        setProcessedTexture(processedTex);
-      };
     },
-    [originalGl, processedGl, originalProgram, processedProgram]
+    [processedGl, processedProgram]
   );
 
-  // Load default image
+  // Update the useEffect for loading the default image
   useEffect(() => {
-    loadImage("/image.jpg");
-  }, [loadImage]);
+    if (processedGl && processedProgram) {
+      // Only load when GL is ready
+      loadImage("/image.jpg");
+    }
+  }, [loadImage, processedGl, processedProgram]);
 
   // Update the handleDrop callback to use the modified loadImage function
   const handleDrop = useCallback(
@@ -352,37 +374,28 @@ const PhotoEditor: React.FC = () => {
 
   // Render the processed image
   useEffect(() => {
-    if (
-      !originalGl ||
-      !processedGl ||
-      !originalTexture ||
-      !processedTexture ||
-      !originalProgram ||
-      !processedProgram
-    )
-      return;
+    if (!processedGl || !processedTexture || !processedProgram) return;
 
-    // Render original image
-    renderImage(originalGl, originalProgram, originalTexture, DEFAULT_SETTINGS);
-
-    // Render processed image
+    // Render processed image with current settings
     renderImage(processedGl, processedProgram, processedTexture, settings);
-  }, [
-    originalGl,
-    processedGl,
-    originalTexture,
-    processedTexture,
-    originalProgram,
-    processedProgram,
-    settings,
-  ]);
+  }, [processedGl, processedTexture, processedProgram, settings]);
 
-  const renderSlider = (
-    name: keyof PhotoSettings,
-    min: number,
-    max: number,
-    step: number = 1
-  ) => {
+  const renderSlider = (name: keyof PhotoSettings) => {
+    const ranges = {
+      temperature: { min: 2000, max: 12000, step: 100, default: 5500 },
+      tint: { min: -150, max: 150, step: 1, default: 0 },
+      exposure: { min: -5, max: 5, step: 0.1, default: 0 },
+      highlights: { min: -100, max: 100, step: 1, default: 0 },
+      shadows: { min: -100, max: 100, step: 1, default: 0 },
+      whites: { min: -100, max: 100, step: 1, default: 0 },
+      blacks: { min: -100, max: 100, step: 1, default: 0 },
+      contrast: { min: 0, max: 100, step: 1, default: 50 },
+      vibrance: { min: -100, max: 100, step: 1, default: 0 },
+      saturation: { min: -100, max: 100, step: 1, default: 0 },
+    };
+
+    const range = ranges[name];
+
     const handleValueChange = (value: number[]) => {
       setSettings((prev) => ({
         ...prev,
@@ -397,13 +410,15 @@ const PhotoEditor: React.FC = () => {
         </label>
         <Slider
           value={[settings[name]]}
-          min={min}
-          max={max}
-          step={step}
+          min={range.min}
+          max={range.max}
+          step={range.step}
           onValueChange={handleValueChange}
           className="w-full"
         />
-        <span className="text-sm">{settings[name]}</span>
+        <span className="text-sm">
+          {name === "temperature" ? `${settings[name]}K` : settings[name]}
+        </span>
       </div>
     );
   };
@@ -441,7 +456,7 @@ const PhotoEditor: React.FC = () => {
     if (!gl) return;
 
     // Create and initialize program
-    const prog = initWebGL(curveCanvas, false);
+    const prog = initWebGL(curveCanvas, gl);
     if (!prog) return;
 
     // Create gradient texture
@@ -531,13 +546,11 @@ const PhotoEditor: React.FC = () => {
                 className={`relative ${isDragging ? "bg-secondary/50" : ""}`}
               >
                 <h3 className="text-sm mb-2">Original (Drop image here)</h3>
-                <canvas
-                  ref={(canvas) => {
-                    if (canvas && !originalGl) {
-                      initWebGL(canvas, false);
-                    }
-                  }}
+                <img
+                  src={originalImageUrl}
+                  alt="Original"
                   className="w-full h-auto"
+                  crossOrigin="anonymous"
                 />
                 {isDragging && (
                   <div className="absolute inset-0 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg">
@@ -550,7 +563,14 @@ const PhotoEditor: React.FC = () => {
                 <canvas
                   ref={(canvas) => {
                     if (canvas && !processedGl) {
-                      initWebGL(canvas, true);
+                      const gl = canvas.getContext("webgl");
+                      if (gl) {
+                        const program = initWebGL(canvas, gl);
+                        if (program) {
+                          setProcessedGl(gl);
+                          setProcessedProgram(program);
+                        }
+                      }
                     }
                   }}
                   className="w-full h-auto"
@@ -596,21 +616,14 @@ const PhotoEditor: React.FC = () => {
           <div className="mb-6">
             <h3 className="text-xl font-semibold mb-4 border-b pb-2">Light</h3>
             {LIGHT_CONTROLS.map((name) => (
-              <div key={`light-${name}`}>
-                {renderSlider(
-                  name,
-                  name === "exposure" ? -5 : -100,
-                  name === "exposure" ? 5 : 100,
-                  name === "exposure" ? 0.1 : 1
-                )}
-              </div>
+              <div key={`light-${name}`}>{renderSlider(name)}</div>
             ))}
           </div>
 
           <div className="mb-6">
             <h3 className="text-xl font-semibold mb-4 border-b pb-2">Color</h3>
             {COLOR_CONTROLS.map((name) => (
-              <div key={`color-${name}`}>{renderSlider(name, -100, 100)}</div>
+              <div key={`color-${name}`}>{renderSlider(name)}</div>
             ))}
           </div>
         </CardContent>
