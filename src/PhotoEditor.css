@@ -1,0 +1,21 @@
+.gradient-preview {
+  position: absolute;
+  left: 60px;
+  bottom: 1rem;
+  width: 340px;
+  height: 2rem;
+  image-rendering: pixelated;
+}
+
+.drop-target {
+  position: relative;
+}
+
+.drop-target.dragging::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.1);
+  border: 2px dashed currentColor;
+  pointer-events: none;
+}
