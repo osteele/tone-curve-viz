@@ -121,5 +121,9 @@ Contributions are welcome! Please follow these steps:
 Written by Claude Artifacts and Cursor. Supervised by
 [@osteele](https://github.com/osteele).
 
+The sample image is "Interior of the Library of Congress Reading Room,
+Washington, D.C.", released to public domain [by Jean
+Beaufort](https://www.publicdomainpictures.net/en/view-image.php?image=524147&picture=library-of-congress).
+
 ## License
 This project is available under the MIT License.
