@@ -176,10 +176,10 @@ const PhotoEditor: React.FC = () => {
       pixels
     );
 
-    // Create curve points from the processed pixels
+    // Create curve points from the processed pixels, ensuring full range
     const points: CurvePoint[] = Array.from({ length: 256 }, (_, i) => ({
       x: i,
-      y: pixels[i * 4], // Using red channel
+      y: Math.min(255, Math.max(0, pixels[i * 4])), // Clamp values between 0-255
     }));
 
     setCurveData(points);
@@ -404,8 +404,8 @@ const PhotoEditor: React.FC = () => {
     };
 
     return (
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">
+      <div className="mb-2">
+        <label className="block text-sm font-medium mb-1">
           {name.charAt(0).toUpperCase() + name.slice(1)}
         </label>
         <Slider
@@ -414,7 +414,7 @@ const PhotoEditor: React.FC = () => {
           max={range.max}
           step={range.step}
           onValueChange={handleValueChange}
-          className="w-full"
+          className="w-full mb-1.5"
         />
         <span className="text-sm">
           {name === "temperature" ? `${settings[name]}K` : settings[name]}
@@ -584,9 +584,15 @@ const PhotoEditor: React.FC = () => {
           <CardContent className="p-4">
             <h2 className="text-lg font-semibold mb-4">Tone Curves</h2>
             <div className="relative pb-12">
-              <LineChart width={400} height={400} data={curveData}>
-                <XAxis dataKey="x" />
-                <YAxis />
+              <LineChart
+                width={400}
+                height={200}
+                data={curveData}
+                margin={{ left: 0, right: 20, top: 20, bottom: 20 }} // Add margins to reduce whitespace
+              >
+                <XAxis dataKey="x" domain={[0, 255]} />{" "}
+                {/* Ensure full range */}
+                <YAxis domain={[0, 255]} /> {/* Ensure full range */}
                 <Line
                   type="monotone"
                   dataKey="y"
@@ -602,7 +608,7 @@ const PhotoEditor: React.FC = () => {
       </div>
 
       <Card className="flex-1">
-        <CardContent className="p-4">
+        <CardContent className="p-4 h-[calc(100vh-2rem)] flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold">Controls</h2>
             <button
@@ -613,18 +619,24 @@ const PhotoEditor: React.FC = () => {
             </button>
           </div>
 
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold mb-4 border-b pb-2">Light</h3>
-            {LIGHT_CONTROLS.map((name) => (
-              <div key={`light-${name}`}>{renderSlider(name)}</div>
-            ))}
-          </div>
+          <div className="overflow-y-auto flex-1">
+            <div className="mb-4">
+              <h3 className="text-xl font-semibold mb-2 border-b pb-2">
+                Light
+              </h3>
+              {LIGHT_CONTROLS.map((name) => (
+                <div key={`light-${name}`}>{renderSlider(name)}</div>
+              ))}
+            </div>
 
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold mb-4 border-b pb-2">Color</h3>
-            {COLOR_CONTROLS.map((name) => (
-              <div key={`color-${name}`}>{renderSlider(name)}</div>
-            ))}
+            <div className="mb-4">
+              <h3 className="text-xl font-semibold mb-2 border-b pb-2">
+                Color
+              </h3>
+              {COLOR_CONTROLS.map((name) => (
+                <div key={`color-${name}`}>{renderSlider(name)}</div>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>
