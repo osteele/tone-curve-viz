@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Slider } from "@/components/ui/slider";
+import { BookOpen, Github } from "lucide-react";
 import React, { DragEvent, useCallback, useEffect, useState } from "react";
 import { Line, LineChart, XAxis, YAxis } from "recharts";
 import "./PhotoEditor.css";
@@ -533,114 +534,150 @@ const PhotoEditor: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex gap-4 p-4">
-      <div className="flex flex-col gap-4 flex-[2]">
-        <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-4">Image</h2>
-            <div className="flex gap-4">
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`relative ${isDragging ? "bg-secondary/50" : ""}`}
-              >
-                <h3 className="text-sm mb-2">Original (Drop image here)</h3>
-                <img
-                  src={originalImageUrl}
-                  alt="Original"
-                  className="w-full h-auto"
-                  crossOrigin="anonymous"
-                />
-                {isDragging && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg">
-                    <span className="text-sm">Drop image here</span>
-                  </div>
-                )}
-              </div>
-              <div>
-                <h3 className="text-sm mb-2">Processed</h3>
-                <canvas
-                  ref={(canvas) => {
-                    if (canvas && !processedGl) {
-                      const gl = canvas.getContext("webgl");
-                      if (gl) {
-                        const program = initWebGL(canvas, gl);
-                        if (program) {
-                          setProcessedGl(gl);
-                          setProcessedProgram(program);
+    <>
+      <div className="fixed top-4 right-4">
+        <a
+          href="https://github.com/osteele/tone-curve-viz"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-2 rounded-full hover:bg-secondary/80 transition-colors"
+          title="View source code"
+        >
+          <Github className="w-5 h-5" />
+        </a>
+      </div>
+      <div className="flex gap-4 p-4 min-h-[calc(100vh-2rem)]">
+        <div className="flex flex-col gap-4 flex-[2]">
+          <Card>
+            <CardContent className="p-4">
+              <h2 className="text-lg font-semibold mb-4">Image</h2>
+              <div className="flex gap-4">
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`relative ${isDragging ? "bg-secondary/50" : ""}`}
+                >
+                  <h3 className="text-sm mb-2">Original (Drop image here)</h3>
+                  <img
+                    src={originalImageUrl}
+                    alt="Original"
+                    className="w-full h-auto"
+                    crossOrigin="anonymous"
+                  />
+                  {isDragging && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/80 border-2 border-dashed border-primary rounded-lg">
+                      <span className="text-sm">Drop image here</span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm mb-2">Processed</h3>
+                  <canvas
+                    ref={(canvas) => {
+                      if (canvas && !processedGl) {
+                        const gl = canvas.getContext("webgl");
+                        if (gl) {
+                          const program = initWebGL(canvas, gl);
+                          if (program) {
+                            setProcessedGl(gl);
+                            setProcessedProgram(program);
+                          }
                         }
                       }
-                    }
-                  }}
-                  className="w-full h-auto"
-                />
+                    }}
+                    className="w-full h-auto"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4">
+              <h2 className="text-lg font-semibold mb-4">Tone Curve</h2>
+              <div className="relative pb-12">
+                <LineChart
+                  width={400}
+                  height={200}
+                  data={curveData}
+                  margin={{ left: 0, right: 20, top: 20, bottom: 20 }} // Add margins to reduce whitespace
+                >
+                  <XAxis dataKey="x" domain={[0, 255]} />{" "}
+                  {/* Ensure full range */}
+                  <YAxis domain={[0, 255]} /> {/* Ensure full range */}
+                  <Line
+                    type="monotone"
+                    dataKey="y"
+                    stroke="#666"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+                <GradientPreview data={curveData} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="flex-1">
+          <CardContent className="p-4 h-[calc(100vh-2rem)] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Controls</h2>
+              <div className="flex gap-2 items-center">
+                <a
+                  href="https://github.com/osteele/tone-curve-viz/blob/main/docs/editing-controls.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-full hover:bg-secondary/80 transition-colors"
+                  title="View editing controls documentation"
+                >
+                  <BookOpen className="w-4 h-4" />
+                </a>
+                <button
+                  onClick={handleReset}
+                  className="px-3 py-1 text-sm bg-secondary hover:bg-secondary/80 rounded-md"
+                >
+                  Reset All
+                </button>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-4">Tone Curve</h2>
-            <div className="relative pb-12">
-              <LineChart
-                width={400}
-                height={200}
-                data={curveData}
-                margin={{ left: 0, right: 20, top: 20, bottom: 20 }} // Add margins to reduce whitespace
-              >
-                <XAxis dataKey="x" domain={[0, 255]} />{" "}
-                {/* Ensure full range */}
-                <YAxis domain={[0, 255]} /> {/* Ensure full range */}
-                <Line
-                  type="monotone"
-                  dataKey="y"
-                  stroke="#666"
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-              <GradientPreview data={curveData} />
+            <div className="overflow-y-auto flex-1">
+              <div className="mb-4">
+                <h3 className="text-xl font-semibold mb-2 border-b pb-2">
+                  Light
+                </h3>
+                {LIGHT_CONTROLS.map((name) => (
+                  <div key={`light-${name}`}>{renderSlider(name)}</div>
+                ))}
+              </div>
+
+              <div className="mb-4">
+                <h3 className="text-xl font-semibold mb-2 border-b pb-2">
+                  Color
+                </h3>
+                {COLOR_CONTROLS.map((name) => (
+                  <div key={`color-${name}`}>{renderSlider(name)}</div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      <Card className="flex-1">
-        <CardContent className="p-4 h-[calc(100vh-2rem)] flex flex-col">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Controls</h2>
-            <button
-              onClick={handleReset}
-              className="px-3 py-1 text-sm bg-secondary hover:bg-secondary/80 rounded-md"
-            >
-              Reset All
-            </button>
-          </div>
-
-          <div className="overflow-y-auto flex-1">
-            <div className="mb-4">
-              <h3 className="text-xl font-semibold mb-2 border-b pb-2">
-                Light
-              </h3>
-              {LIGHT_CONTROLS.map((name) => (
-                <div key={`light-${name}`}>{renderSlider(name)}</div>
-              ))}
-            </div>
-
-            <div className="mb-4">
-              <h3 className="text-xl font-semibold mb-2 border-b pb-2">
-                Color
-              </h3>
-              {COLOR_CONTROLS.map((name) => (
-                <div key={`color-${name}`}>{renderSlider(name)}</div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+      <footer className="fixed bottom-0 left-0 right-0 p-2 text-center text-sm bg-background/80 backdrop-blur-sm border-t">
+        Copyright 2024 by Oliver Steele. This site is{" "}
+        <a
+          href="https://underconstruction.fun"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline"
+        >
+          Under Construction
+        </a>
+        .
+      </footer>
+    </>
   );
 };
 
