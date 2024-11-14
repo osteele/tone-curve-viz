@@ -1,4 +1,4 @@
-# Tone Curve Visualization
+# Tone Curve Visualizer
 
 A toy photo editor for exploring the effects of standard photo editing controls.
 This project provides both visual feedback through image preview and technical

@@ -537,7 +537,7 @@ const PhotoEditor: React.FC = () => {
       <div className="flex flex-col gap-4 flex-[2]">
         <Card>
           <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-4">Preview</h2>
+            <h2 className="text-lg font-semibold mb-4">Image</h2>
             <div className="flex gap-4">
               <div
                 onDragOver={handleDragOver}
@@ -582,7 +582,7 @@ const PhotoEditor: React.FC = () => {
 
         <Card>
           <CardContent className="p-4">
-            <h2 className="text-lg font-semibold mb-4">Tone Curves</h2>
+            <h2 className="text-lg font-semibold mb-4">Tone Curve</h2>
             <div className="relative pb-12">
               <LineChart
                 width={400}
